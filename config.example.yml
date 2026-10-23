@@ -1,0 +1,128 @@
+# ts6-crier — voice announcer for TeamSpeak
+#
+# First run copies this file to config.yml and asks for the server address.
+# Edit config.yml afterwards and restart the bot. Replaced a sound file? Just
+# restart — the audio cache notices size and modification time changes.
+
+server:
+  host: 127.0.0.1          # address of the TeamSpeak server
+  port: 9987
+  nickname: "[BOT] Crier"
+  channel: ""              # channel the bot sits in; empty = server default
+  # password: ""           # server password, if there is one
+  # Every server field can also come from the environment, which wins over
+  # this file: CRIER_HOST, CRIER_PORT, CRIER_PASSWORD, CRIER_NICKNAME, CRIER_CHANNEL
+
+sounds_dir: sounds
+
+# Chime the voice lines are laid over. An event with `voice:` (a bare voice
+# line) is mixed onto this bed with the given delay; an event with `play:`
+# (a finished track) is played as it is.
+mix:
+  bed: gong.mp3
+  voice_at: 2.6s
+  # The voice is matched to the chime's level so the balance is the same in
+  # every announcement. 0 = level with the chime, +3 = voice louder.
+  voice_offset_db: 2
+
+# Files players upload through the TeamSpeak file browser, used by .files and
+# .set. By default the bot fetches them over TeamSpeak's file transfer, which
+# works wherever the bot runs. If the bot shares a machine with the server you
+# can point it at the server's files directory instead:
+uploads:
+  # root: /opt/teamspeak/files/virtualserver_1
+  max_seconds: 30
+
+# Every clip is brought to one loudness, so swapping a file does not change
+# the level. Lower = quieter. null switches normalisation off.
+audio:
+  target_lufs: -30
+  max_boost_db: 18     # never raise a quiet recording by more than this
+
+# Text-to-speech for the .say command, via piper (https://github.com/rhasspy/piper).
+# Optional: without it everything else works. To enable, put piper into
+# piper/ and a voice (.onnx + .onnx.json) into voices/ next to the bot —
+# or point at them here.
+tts:
+  # binary: piper/piper
+  # model: voices/en_US-ryan-medium.onnx
+  max_chars: 200
+
+whisper:
+  # Channels the bot stays SILENT in; announcements go to every other one.
+  # Use ids, not names: names repeat, and excluding by name silences all of
+  # them at once. The .channels command lists every channel with its id.
+  exclude_channels: []
+  #  - 1     # e.g. AFK
+
+commands:
+  # A dot, not a slash: the TeamSpeak client treats "/" as its own command
+  # and never sends such a message to anyone.
+  prefix: "."
+
+  # Who may command the bot: server groups by name (or by sgid as a number).
+  # Membership is checked live, so giving someone the group in TeamSpeak is
+  # enough — no config change needed.
+  admin_groups:
+    - "Server Admin"
+
+  # Individual clients by unique id, in addition to the groups. A refused
+  # client's id is printed in the bot's log ("denied ...").
+  admins: []
+
+  # Both lists empty = anyone on the server may command the bot.
+
+  # Two schedules firing within this window count as "at the same time".
+  combo_window: 150ms
+
+# ---------------------------------------------------------------------------
+# Schedules. The name of a schedule is its command: "jungle" below is .jungle
+#
+#   every: 5m                 one announcement every 5 minutes, forever
+#
+#   cycle: 30m                a 30-minute cycle with announcements inside it
+#   at:
+#     - {after: 5m, voice: x.mp3}
+#
+#   repeat: false             run the cycle once, then stop by itself
+#   autostart: true           start as soon as the bot connects
+#
+# What an event plays:
+#   play:  file.mp3      a finished track, played as is
+#   voice: file.mp3      a bare voice line, laid over the chime (see mix:)
+#   say:   "some text"   spoken by text-to-speech (needs piper, see tts:)
+#
+# The example below is a 30-minute guild war: the game clock runs 30:00 -> 0:00
+# and the command is given just before it starts. The tracks say "in 30
+# seconds", so each one plays half a minute before its mark.
+#
+#   mark 25:00  ->  +5m    jungle and boss
+#   mark 20:00  ->  +10m   jungle
+#   mark 15:00  ->  +15m   jungle and boss
+#   mark 10:00  ->  +20m   jungle
+#   mark  5:00  ->  +25m   jungle
+# ---------------------------------------------------------------------------
+schedules:
+
+  jungle:
+    cycle: 30m
+    repeat: false
+    at:
+      - {after: 5m,  voice: mariojungle.mp3}
+      - {after: 10m, voice: mariojungle.mp3}
+      - {after: 15m, voice: mariojungle.mp3}
+      - {after: 20m, voice: mariojungle.mp3}
+      - {after: 25m, voice: mariojungle.mp3}
+
+  boss:
+    cycle: 30m
+    repeat: false
+    at:
+      - {after: 5m,  voice: marioboss.mp3}
+      - {after: 15m, voice: marioboss.mp3}
+
+# When several schedules fire at the same moment, play one merged track
+# instead of each of them in turn.
+combos:
+  - when: [jungle, boss]
+    voice: "marioboss+jungle.mp3"

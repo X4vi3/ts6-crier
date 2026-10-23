@@ -1,0 +1,33 @@
+{
+  "name": "ts6-crier",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "libsodium-wrappers-sumo": "^0.8.4",
+    "opusscript": "^0.1.1",
+    "yaml": "^2.9.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.1",
+    "esbuild": "^0.25.10",
+    "postject": "^1.0.0-alpha.6",
+    "typescript": "^5.9.3"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/crier.js",
+    "typecheck": "tsc --noEmit -p .",
+    "bundle": "node scripts/bundle.mjs",
+    "package": "node scripts/package.mjs"
+  },
+  "description": "Voice announcer bot for TeamSpeak: scheduled announcements whispered to every channel",
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "OSL-3.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/X4vi3/ts6-crier.git"
+  }
+}

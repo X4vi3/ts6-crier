@@ -1,0 +1,115 @@
+name: build
+
+# Every push builds all platforms and runs an end-to-end install on Linux
+# against a real TeamSpeak 6 server. Pushing a tag like v0.2.0 also publishes
+# the archives as a GitHub release — that is the whole release process.
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-24.04, target: linux-x64, archive: tar.gz }
+          - { runner: ubuntu-24.04-arm, target: linux-arm64, archive: tar.gz }
+          - { runner: windows-latest, target: windows-x64, archive: zip }
+          - { runner: macos-latest, target: macos-arm64, archive: tar.gz }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx tsc --noEmit -p .
+      - name: Package
+        shell: bash
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then export CRIER_VERSION="$GITHUB_REF_NAME"; else export CRIER_VERSION="dev-${GITHUB_SHA::7}"; fi
+          node scripts/package.mjs
+      - name: Smoke test the archive
+        shell: bash
+        run: |
+          mkdir smoke && cd smoke
+          if [ "${{ matrix.archive }}" = zip ]; then unzip -q ../release/ts6-crier-${{ matrix.target }}.zip; else tar -xzf ../release/ts6-crier-${{ matrix.target }}.tar.gz; fi
+          ./ts6-crier/ts6-crier --version
+          ./ts6-crier/ffmpeg -hide_banner -version | head -1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ts6-crier-${{ matrix.target }}
+          path: release/ts6-crier-${{ matrix.target }}.${{ matrix.archive }}
+          if-no-files-found: error
+
+  # The real thing: install.sh on a clean Ubuntu, a TeamSpeak 6 server next to
+  # it, and the bot has to come up as a service, connect and upload its avatar
+  # over file transfer.
+  e2e-linux:
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: ts6-crier-linux-x64
+          path: release
+      - name: Start a TeamSpeak 6 server
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download -R teamspeak/teamspeak6-server -p '*linux-amd64*' -D ts6
+          tar -xf ts6/*.tar.* -C ts6
+          SRV=$(dirname "$(find ts6 -name tsserver -type f | head -1)")
+          cd "$SRV"
+          TSSERVER_LICENSE_ACCEPTED=accept nohup ./tsserver > "$GITHUB_WORKSPACE/tsserver.log" 2>&1 &
+          for i in $(seq 1 30); do ss -lun | grep -q ':9987 ' && break; sleep 1; done
+          ss -lun | grep ':9987 '
+      - name: Install with install.sh
+        run: sudo CRIER_ARCHIVE="$PWD/release/ts6-crier-linux-x64.tar.gz" CRIER_HOST=127.0.0.1 sh install.sh
+      - name: Bot is connected
+        run: |
+          for i in $(seq 1 30); do sudo journalctl -u ts6-crier -o cat | grep -q '| ready' && break; sleep 2; done
+          sudo journalctl -u ts6-crier -o cat
+          sudo journalctl -u ts6-crier -o cat | grep -q '| ready'
+          sudo journalctl -u ts6-crier -o cat | grep -q 'avatar uploaded'
+      - name: Update keeps config and identity
+        run: |
+          sum() { sudo sha256sum /opt/ts6-crier/config.yml /opt/ts6-crier/identity.json; }
+          before=$(sum)
+          sudo CRIER_ARCHIVE="$PWD/release/ts6-crier-linux-x64.tar.gz" sh install.sh
+          [ "$before" = "$(sum)" ]
+      - name: Uninstall
+        run: |
+          sudo sh install.sh --purge
+          ! systemctl is-enabled ts6-crier 2>/dev/null
+          [ ! -e /opt/ts6-crier ]
+      - if: failure()
+        run: cat tsserver.log || true
+
+  release:
+    if: github.ref_type == 'tag'
+    needs: [build, e2e-linux]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: release
+          merge-multiple: true
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --generate-notes --title "$GITHUB_REF_NAME" \
+            release/* install.sh install.ps1

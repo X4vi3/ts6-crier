@@ -1,0 +1,19 @@
+node_modules/
+dist/
+release/
+.cache/
+
+# Everything a running bot writes — per install, never published.
+config.yml
+config.test.yml
+identity.json
+state.json
+settings.json
+overrides.json
+cache/
+sounds/custom/
+voices/
+piper/
+
+# Notes about one particular server.
+private/
